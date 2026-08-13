@@ -46,10 +46,25 @@ let serverPort = 0;
 let currentRunData = null;
 let pendingRun = null;
 let activeDialogResolver = null;
+const sseClients = new Set();
+function triggerLiveReload() {
+    for (const client of sseClients) {
+        try {
+            client.write('data: reload\n\n');
+        } catch (e) {
+            sseClients.delete(client);
+        }
+    }
+}
 const SUPPORTED_LANGS = ['javascript', 'html', 'typescript'];
 const SHIM = `<script>
 (function(){
   /* ── Console interception ── */
+  var origLog = console.log.bind(console);
+  var origWarn = console.warn.bind(console);
+  var origError = console.error.bind(console);
+  var origInfo = console.info.bind(console);
+
   function serialize(v){
     if(v===null)return'null';
     if(v===undefined)return'undefined';
@@ -74,10 +89,19 @@ const SHIM = `<script>
     return String(v);
   }
   function send(level,args){
+    try {
+      if (level === 'warn') origWarn.apply(console, args);
+      else if (level === 'error') origError.apply(console, args);
+      else if (level === 'info') origInfo.apply(console, args);
+      else origLog.apply(console, args);
+    } catch(e){}
+
     var parts=[];
     for(var i=0;i<args.length;i++) parts.push(serialize(args[i]));
     var msg = parts.join(' ');
-    window.parent.postMessage({ type: 'log', level: level, msg: msg }, '*');
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'log', level: level, msg: msg }, '*');
+    }
   }
   console.log   = function(){ send('log',   arguments); };
   console.warn  = function(){ send('warn',  arguments); };
@@ -147,6 +171,17 @@ const SHIM = `<script>
       window.parent.postMessage({ type:'eval_result', value:err.message, isError:true }, '*');
     }
   });
+  /* ── Live Reload SSE Listener for external browser windows ── */
+  if (typeof EventSource !== 'undefined') {
+    try {
+      var es = new EventSource('/__live_reload');
+      es.onmessage = function(e) {
+        if (e.data === 'reload') {
+          window.location.reload();
+        }
+      };
+    } catch(e) {}
+  }
 })();
 </script>`;
 function detectInfiniteLoop(code) {
@@ -225,6 +260,19 @@ function activate(context) {
         }
         // Strip cache-busting query params if present
         const urlPath = decodeURIComponent(req.url.split('?')[0] || '/');
+        // ── Live Reload SSE Endpoint ──
+        if (urlPath === '/__live_reload') {
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*'
+            });
+            res.write('retry: 1000\n\n');
+            sseClients.add(res);
+            req.on('close', () => sseClients.delete(res));
+            return;
+        }
         // ── Synchronous Dialog Interception ──
         if (urlPath === '/__sync_dialog') {
             let body = '';
@@ -263,7 +311,7 @@ function activate(context) {
         // Determine the exact URL path expected for the currently running file
         const runFilePath = currentRunData ? '/' + currentRunData.relativePath : '/';
         // ROOT PATH: Serve the explicitly run file (with shim injected)
-        if (urlPath === runFilePath || (runFilePath === '/index.html' && urlPath === '/')) {
+        if (urlPath === '/' || urlPath === runFilePath || (runFilePath === '/index.html' && urlPath === '/')) {
             res.writeHead(200, { 'Content-Type': 'text/html' });
             if (!currentRunData) {
                 res.end('<!DOCTYPE html><html><body>No code to run.</body></html>');
@@ -279,12 +327,25 @@ function activate(context) {
             res.end(html);
             return;
         }
-        // ADJACENT FILES: Serve other assets relative to the workspace root
+        if (urlPath === '/favicon.ico') {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+
+        // ADJACENT FILES: Serve other assets relative to the active file folder or workspace root
         if (currentRunData && currentRunData.workspaceRoot && urlPath !== '/') {
             try {
                 const normalizedPath = path.normalize(urlPath).replace(/^(\.\.[\/\\])+/, '');
-                const filePath = path.join(currentRunData.workspaceRoot, normalizedPath);
-                if (!filePath.startsWith(currentRunData.workspaceRoot)) {
+                const currentFileDir = path.dirname(path.join(currentRunData.workspaceRoot, currentRunData.relativePath));
+                
+                let filePath = path.join(currentFileDir, normalizedPath);
+                if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+                    filePath = path.join(currentRunData.workspaceRoot, normalizedPath);
+                }
+
+                const rel = path.relative(currentRunData.workspaceRoot, filePath);
+                if (rel.startsWith('..') || path.isAbsolute(rel)) {
                     res.writeHead(403);
                     res.end('Forbidden');
                     return;
@@ -297,8 +358,13 @@ function activate(context) {
                         '.json': 'application/json',
                         '.png': 'image/png',
                         '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.gif': 'image/gif',
                         '.svg': 'image/svg+xml',
-                        '.html': 'text/html'
+                        '.html': 'text/html',
+                        '.woff': 'font/woff',
+                        '.woff2': 'font/woff2',
+                        '.ttf': 'font/ttf'
                     };
                     // Inject SHIM into adjacent HTML files so heartbeat + console work on navigation
                     if (ext === '.html') {
@@ -332,15 +398,16 @@ function activate(context) {
     }
     function sendRun(code, filename, language, workspaceRoot, relativePath) {
         currentRunData = { code, filename, language, workspaceRoot, relativePath };
+        triggerLiveReload();
         if (!panel)
             return;
         // Update panel title to reflect the HTML <title> tag or fallback to filename
         if (language === 'html') {
             const htmlTitle = extractHtmlTitle(code);
-            panel.title = htmlTitle ? htmlTitle : `${filename} — Cobee Playground`;
+            panel.title = htmlTitle ? htmlTitle : `${filename} — JS Live Preview`;
         }
         else {
-            panel.title = `${filename} — Cobee Playground`;
+            panel.title = `${filename} — JS Live Preview`;
         }
         const msg = { command: 'run', filename, language, port: serverPort, relativePath };
         if (isWebviewReady) {
@@ -372,7 +439,7 @@ function activate(context) {
         }
         if (!panel) {
             isWebviewReady = false;
-            panel = vscode.window.createWebviewPanel('cobeePlayground', language === 'html' ? (extractHtmlTitle(code) || `${filename} — Cobee Playground`) : `${filename} — Cobee Playground`, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
+            panel = vscode.window.createWebviewPanel('jsLivePreview', language === 'html' ? (extractHtmlTitle(code) || `${filename} - Live Preview`) : `${filename} - Live Preview`, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
                 enableScripts: true,
                 localResourceRoots: [
                     vscode.Uri.file(path.join(context.extensionPath, 'media'))
@@ -380,8 +447,8 @@ function activate(context) {
                 retainContextWhenHidden: true,
             });
             panel.iconPath = {
-                light: vscode.Uri.file(path.join(context.extensionPath, 'media', 'icon.svg')),
-                dark: vscode.Uri.file(path.join(context.extensionPath, 'media', 'icon.svg')),
+                light: vscode.Uri.file(path.join(context.extensionPath, 'media', 'logo.png')),
+                dark: vscode.Uri.file(path.join(context.extensionPath, 'media', 'logo.png')),
             };
             panel.webview.html = getWebviewContent(panel.webview, context);
             panel.webview.onDidReceiveMessage((msg) => {
@@ -393,8 +460,8 @@ function activate(context) {
                         if (panel) {
                             const pr = pendingRun;
                             panel.title = pr.language === 'html'
-                                ? (extractHtmlTitle(pr.code) || `${pr.filename} — Cobee Playground`)
-                                : `${pr.filename} — Cobee Playground`;
+                                ? (extractHtmlTitle(pr.code) || `${pr.filename} - Live Preview`)
+                                : `${pr.filename} - Live Preview`;
                         }
                         panel?.webview.postMessage({
                             command: 'run',
@@ -423,6 +490,11 @@ function activate(context) {
                         });
                     }
                 }
+                else if (msg.type === 'open_external') {
+                    if (serverPort) {
+                        vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${serverPort}/`));
+                    }
+                }
             }, undefined, context.subscriptions);
             panel.onDidDispose(() => {
                 panel = undefined;
@@ -436,26 +508,82 @@ function activate(context) {
             sendRun(code, filename, language, workspaceRoot, relativePath);
         }
     }
-    const runCommand = vscode.commands.registerCommand('cobeePlayground.run', () => {
+    const runCommand = vscode.commands.registerCommand('jsLivePreview.run', () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
-            vscode.window.showWarningMessage('Cobee Playground: No active file to run.');
+            vscode.window.showWarningMessage('Live Preview: No active file to run.');
             return;
         }
+        const openLocation = vscode.workspace.getConfiguration('jsLivePreview').get('openLocation');
         openAndRun(editor);
+        if (openLocation === 'externalBrowser') {
+            setTimeout(() => {
+                if (serverPort) {
+                    vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${serverPort}/`));
+                }
+            }, 300);
+        }
     });
-    const clearCommand = vscode.commands.registerCommand('cobeePlayground.clear', () => {
+    const clearCommand = vscode.commands.registerCommand('jsLivePreview.clear', () => {
         panel?.webview.postMessage({ command: 'clear' });
     });
+    const openExternalCommand = vscode.commands.registerCommand('jsLivePreview.openExternal', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showWarningMessage('Live Preview: No active file to open.');
+            return;
+        }
+        if (!serverPort) {
+            await openAndRun(editor);
+        } else {
+            const filename = path.basename(editor.document.fileName);
+            const language = editor.document.languageId;
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+            const workspaceRoot = workspaceFolder ? workspaceFolder.uri.fsPath : path.dirname(editor.document.fileName);
+            let relativePath = path.relative(workspaceRoot, editor.document.fileName).replace(/\\/g, '/');
+            if (!relativePath || relativePath.startsWith('..')) {
+                relativePath = filename;
+            }
+            const code = editor.document.getText();
+            currentRunData = { code, filename, language, workspaceRoot, relativePath };
+        }
+        if (serverPort) {
+            vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${serverPort}/`));
+        }
+    });
+    const onEditorChange = vscode.window.onDidChangeActiveTextEditor((editor) => {
+        if (editor && panel && editor.viewColumn && editor.viewColumn !== vscode.ViewColumn.One) {
+            vscode.window.showTextDocument(editor.document, { viewColumn: vscode.ViewColumn.One, preserveFocus: false });
+        }
+    });
     const onSave = vscode.workspace.onDidSaveTextDocument((doc) => {
-        if (!panel || !currentRunData)
+        if (!currentRunData)
             return;
         if (doc.fileName === path.join(currentRunData.workspaceRoot, currentRunData.relativePath)) {
             currentRunData.code = doc.getText();
         }
         sendRun(currentRunData.code, currentRunData.filename, currentRunData.language, currentRunData.workspaceRoot, currentRunData.relativePath);
     });
-    context.subscriptions.push(runCommand, clearCommand, onSave);
+
+    let liveTypingTimer = null;
+    const onChangeType = vscode.workspace.onDidChangeTextDocument((e) => {
+        const activeEditor = vscode.window.activeTextEditor;
+        if (!activeEditor || e.document !== activeEditor.document) return;
+        const lang = activeEditor.document.languageId;
+        if (!SUPPORTED_LANGS.includes(lang)) return;
+
+        if (liveTypingTimer) clearTimeout(liveTypingTimer);
+        liveTypingTimer = setTimeout(() => {
+            const filename = path.basename(activeEditor.document.fileName);
+            const relativePath = vscode.workspace.asRelativePath(activeEditor.document.uri);
+            const workspaceRoot = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri)?.uri.fsPath || path.dirname(activeEditor.document.fileName);
+            const code = activeEditor.document.getText();
+            currentRunData = { code, filename, language: lang, workspaceRoot, relativePath };
+            sendRun(code, filename, lang, workspaceRoot, relativePath);
+        }, 300);
+    });
+
+    context.subscriptions.push(runCommand, clearCommand, openExternalCommand, onEditorChange, onSave, onChangeType);
 }
 function getWebviewContent(webview, context) {
     const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'media', 'style.css')));
@@ -476,7 +604,7 @@ function getWebviewContent(webview, context) {
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cobee Playground</title>
+  <title>JS Live Preview</title>
   <link rel="stylesheet" href="${styleUri}">
 </head>
 <body data-error-icon="${errorIconUri}">
@@ -486,6 +614,9 @@ function getWebviewContent(webview, context) {
     <span class="status-dot idle" id="statusDot"></span>
     <span class="status-file" id="statusFile">No file run yet — press ▶ to start</span>
     <div class="statusbar-actions">
+      <button class="icon-btn clear-btn" id="openExternalBtn" title="Open preview in external browser window">
+        🌐 Open in Browser
+      </button>
       <button class="icon-btn clear-btn" id="clearBtn" title="Clear console">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
           <path d="M10 3h3v1h-1v9l-1 1H4l-1-1V4H2V3h3V2a1 1 0 011-1h3a1 1 0 011 1v1zm-4-1v1h3V2H6zM4 13h7V4H4v9zm2-8H5v7h1V5zm1 0h1v7H7V5zm2 0h1v7H9V5z"/>
@@ -579,6 +710,10 @@ function getNonce() {
 }
 function deactivate() {
     panel?.dispose();
+    for (const client of sseClients) {
+        try { client.end(); } catch (e) {}
+    }
+    sseClients.clear();
     if (server) {
         server.close();
     }

@@ -1,6 +1,6 @@
-# JS Playground — Comprehensive Technical Architecture Document
+# JS Live Preview — Comprehensive Technical Architecture Document
 
-This document provides an exhaustive, low-level technical overview of the "JS Playground" Visual Studio Code extension. It details how the VS Code Extension Host environment operates, the specific VS Code APIs leveraged, how our custom functionalities are constructed on top of them, and the complex interoperability required to bridge isolated execution layers safely.
+This document provides an exhaustive, low-level technical overview of the "JS Live Preview" Visual Studio Code extension. It details how the VS Code Extension Host environment operates, the specific VS Code APIs leveraged, how our custom functionalities are constructed on top of them, and the complex interoperability required to bridge isolated execution layers safely.
 
 ---
 
@@ -10,7 +10,7 @@ To understand how this extension is built, one must first understand the strict 
 
 VS Code is an Electron-based application running multiple Node.js and Chromium processes. Extensions do **not** run in the main UI thread. Instead, they run in a separate background process called the **Extension Host**. 
 
-When an extension needs to display custom UI (like our Playground panel), it must spawn a **Webview**. A Webview is essentially an isolated iframe rendered by Chromium, completely segregated from the Extension Host. 
+When an extension needs to display custom UI (like our Live Preview panel), it must spawn a **Webview**. A Webview is essentially an isolated iframe rendered by Chromium, completely segregated from the Extension Host. 
 
 Because of this architecture, an extension relies heavily on **Inter-Process Communication (IPC)**. The Extension Host (Node.js) cannot touch the DOM of the Webview, and the Webview (Browser JS) cannot access Node.js APIs or the file system. They can only communicate by passing serialized JSON messages back and forth.
 
@@ -20,12 +20,12 @@ Because of this architecture, an extension relies heavily on **Inter-Process Com
 
 Our extension relies on the `vscode` API module provided by the Extension Host. Here are the core APIs driving the functionality:
 
-*   **`vscode.commands.registerCommand(id, callback)`**: Hooks the extension into VS Code's Command Palette and UI buttons. We use this to bind `jsPlayground.run` to the "Play" button in the editor title bar.
+*   **`vscode.commands.registerCommand(id, callback)`**: Hooks the extension into VS Code's Command Palette and UI buttons. We use this to bind `jsLivePreview.run` to the "Play" button in the editor title bar.
 *   **`vscode.window.activeTextEditor`**: Retrieves a reference to the currently focused text editor, allowing us to read the active user code via `editor.document.getText()`.
 *   **`vscode.window.createWebviewPanel(...)`**: Spawns the Webview alongside the editor (`vscode.ViewColumn.Beside`). It configures the panel's title, initial webview-specific options (like `enableScripts: true`), and the strict directories it is allowed to load local files from (`localResourceRoots`).
 *   **`webviewPanel.webview.postMessage(message)` / `webviewPanel.webview.onDidReceiveMessage(callback)`**: The IPC bridge between the Node.js Extension Host and the sandboxed Webview HTML/JS frontend.
 *   **`webviewPanel.webview.asWebviewUri(uri)`**: Converts standard local file paths (e.g., `media/style.css`) into secure internal VS Code URIs (`vscode-webview-resource://...`) that bypass Webview security restrictions.
-*   **`vscode.window.onDidChangeActiveTextEditor`**: A reactive event listener that fires whenever the user clicks to a different file tab. We use this to instantly auto-preview the new `.js` or `.html` file.
+*   **`vscode.workspace.onDidChangeTextDocument`**: A reactive event listener that fires whenever the user types in the active file. We use this to instantly auto-preview text changes with a 300ms debounce timer.
 *   **`vscode.workspace.onDidSaveTextDocument`**: Fires when a file is saved. We use this to auto-refresh the preview when the user hits `Ctrl+S`.
 
 ---
@@ -34,7 +34,7 @@ Our extension relies on the `vscode` API module provided by the Extension Host. 
 
 To safely execute arbitrary user code and capture its `console` output, the extension is split into three highly specialized execution layers.
 
-### Layer A: The Extension Backend (`src/extension.ts`)
+### Layer A: The Extension Backend (`out/extension.js`)
 Executes in: **VS Code Extension Host (Node.js)**
 
 This is the brain of the operation. It manages the VS Code UI lifecycle and handles the heavyweight lifting.
@@ -44,9 +44,9 @@ This is the brain of the operation. It manages the VS Code UI lifecycle and hand
     *   A `null` origin blocks `window.parent.postMessage` due to cross-origin security rules, destroying our ability to relay `console.log` back to our custom console pane.
     *   **The Solution:** The backend uses Node.js's native `http` module to spawn an ephemeral local server (`http.createServer()`). It binds to `127.0.0.1` on port `0` (which delegates port allocation to the OS, avoiding collisions).
     *   When the server receives an HTTP GET request to its root (`/`), it takes the cached `currentRunData` (the user's code), injects the **Console Interceptor Shim**, wraps it in a valid HTML5 skeleton, and serves it back with a `200 OK` response.
-3.  **Command Orchestration:** When `jsPlayground.run` is triggered, it extracts the `code`, `filename`, and `languageId`. It either boots the Panel or reveals it, then sends an IPC message to Layer B containing the `serverPort` where the code is waiting to be served.
+3.  **Command Orchestration:** When `jsLivePreview.run` is triggered, it extracts the `code`, `filename`, and `languageId`. It either boots the Panel or reveals it, then sends an IPC message to Layer B containing the `serverPort` where the code is waiting to be served.
 
-### Layer B: The Webview Playground UI (`media/main.js` & `media/style.css`)
+### Layer B: The Webview Live Preview UI (`media/main.js` & `media/style.css`)
 Executes in: **VS Code Webview (Chromium Browser Engine)**
 
 This layer provides the graphical interface the user interacts with (Preview pane + Console pane).
@@ -79,13 +79,13 @@ The life blood of the extension is the asynchronous communication between Node.j
 
 **Scenario:** The user has `app.js` open. It contains `console.log("Hello OS!");`. They hit the "Run" button in the VS Code editor title bar.
 
-1.  **[VS Code Shell]** Fires the `jsPlayground.run` command.
-2.  **[Backend - Node.js]** `extension.ts` retrieves the text string `console.log("Hello OS!");` from the active editor.
+1.  **[VS Code Shell]** Fires the `jsLivePreview.run` command.
+2.  **[Backend - Node.js]** `extension.js` retrieves the text string `console.log("Hello OS!");` from the active editor.
 3.  **[Backend - Node.js]** Caches the script payload locally to memory (`currentRunData`).
-4.  **[Backend -> Webview]** `extension.ts` calls `panel.webview.postMessage({ command: 'run', filename: 'app.js', port: 43210 })`.
+4.  **[Backend -> Webview]** `extension.js` calls `panel.webview.postMessage({ command: 'run', filename: 'app.js', port: 43210 })`.
 5.  **[Webview]** `main.js` catches the IPC message. It updates the UI status dot to yellow (running).
 6.  **[Webview -> HTTP Server]** `main.js` sets the `<iframe src>` to `http://127.0.0.1:43210/?t=1658402910`. The Chromium engine initiates an HTTP network request.
-7.  **[HTTP Server -> Webview (Iframe)]** `extension.ts` receives the request, wraps the `app.js` code in the HTML skeleton + the Console Shim script, and serves it globally with `Access-Control-Allow-Origin: *`.
+7.  **[HTTP Server -> Webview (Iframe)]** `extension.js` receives the request, wraps the `app.js` code in the HTML skeleton + the Console Shim script, and serves it globally.
 8.  **[Iframe Context]** The HTML parses. First, the Shadow Shim evaluates, hijacking the `console` object. Next, the user's script evaluates: `console.log("Hello OS!");`.
 9.  **[Iframe Context -> Webview]** The Shim intercepts the string `"Hello OS!"`, processes it, and fires `window.parent.postMessage({ type: 'log', level: 'log', msg: 'Hello OS!' }, '*')`.
 10. **[Webview]** `main.js`'s top-level window catches the `message` event. Seeing `type: 'log'`, it routes to `addLogEntry('log', 'Hello OS!')`.
@@ -93,4 +93,4 @@ The life blood of the extension is the asynchronous communication between Node.j
 
 ## 5. Extensibility and Future Considerations
 
-By decoupling the execution engine entirely from the webview file protocol via the local HTTP server, the extension architecture allows high extensibility. Features like real-time Hot Module Replacement (HMR) or supporting complex source-mapped transpiled languages (like running raw Typescript directly, requiring compilation in Layer A before serving to Layer C) are strictly isolated architectural upgrades that will not break the visualization and sandbox boundaries.
+By decoupling the execution engine entirely from the webview file protocol via the local HTTP server, the extension architecture allows high extensibility. Features like real-time Hot Module Replacement (HMR) or supporting complex source-mapped transpiled languages are strictly isolated architectural upgrades that will not break the visualization and sandbox boundaries.

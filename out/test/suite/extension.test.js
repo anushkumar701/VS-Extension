@@ -38,14 +38,14 @@ const vscode = __importStar(require("vscode"));
 suite('Extension Test Suite', () => {
     vscode.window.showInformationMessage('Start all tests.');
     test('Extension should be present', () => {
-        assert.ok(vscode.extensions.getExtension('WikanAdnyana.cobee-playground'));
+        assert.ok(vscode.extensions.getExtension('Midnight-Compiler.js-live-preview'));
     });
     test('Should register commands', async () => {
-        const ext = vscode.extensions.getExtension('WikanAdnyana.cobee-playground');
+        const ext = vscode.extensions.getExtension('Midnight-Compiler.js-live-preview');
         await ext?.activate();
         const commands = await vscode.commands.getCommands(true);
-        assert.ok(commands.includes('cobeePlayground.run'), "Run command is not registered");
-        assert.ok(commands.includes('cobeePlayground.clear'), "Clear command is not registered");
+        assert.ok(commands.includes('jsLivePreview.run'), "Run command is not registered");
+        assert.ok(commands.includes('jsLivePreview.clear'), "Clear command is not registered");
     });
     test('Should activate and run', async () => {
         // Open a new untitled JS file to test the run command
@@ -55,7 +55,7 @@ suite('Extension Test Suite', () => {
         });
         await vscode.window.showTextDocument(doc);
         // Execute the command to open the panel
-        await vscode.commands.executeCommand('cobeePlayground.run');
+        await vscode.commands.executeCommand('jsLivePreview.run');
         // Check if the command ran successfully without throwing
         assert.ok(true);
     });

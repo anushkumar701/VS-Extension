@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════
-//  Cobee Playground — Console Output Test
+//  JS Live Preview — Console Output Test
 // ═══════════════════════════════════════════
 
 // ── 1. Basic Arrays (should be horizontal) ──

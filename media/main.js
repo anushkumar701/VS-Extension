@@ -1,5 +1,5 @@
 // @ts-check
-// JS Playground — Webview script (preview + console only)
+// JS Live Preview — Webview script (preview + console only)
 (function () {
     'use strict';
 
@@ -25,6 +25,11 @@
     const consoleToggle   = document.getElementById('consoleToggle');
     const replInput = /** @type {HTMLInputElement} */ (document.getElementById('replInput'));
     const replBtn   = document.getElementById('replBtn');
+    const openExternalBtn = document.getElementById('openExternalBtn');
+
+    openExternalBtn?.addEventListener('click', () => {
+        vscode?.postMessage({ type: 'open_external' });
+    });
 
     let logCount = 0, errors = 0, warnings = 0;
     let lastFilename = '', lastLanguage = '';
@@ -103,8 +108,13 @@
     });
 
     // ── Feature 11: REPL Console Input ───────────────────────────────
+    let replHistory = [];
+    let replHistoryIndex = -1;
+
     function sendEval(code) {
         if (!code.trim()) return;
+        replHistory.push(code);
+        replHistoryIndex = replHistory.length;
         addLogEntry('log', '> ' + code);   // echo input like DevTools
         if (preview.contentWindow) {
             preview.contentWindow.postMessage({ type: 'eval', code }, '*');
@@ -117,6 +127,21 @@
         if (e.key === 'Enter') {
             sendEval(replInput.value);
             replInput.value = '';
+        } else if (e.key === 'ArrowUp') {
+            if (replHistory.length > 0 && replHistoryIndex > 0) {
+                replHistoryIndex--;
+                replInput.value = replHistory[replHistoryIndex];
+            }
+            e.preventDefault();
+        } else if (e.key === 'ArrowDown') {
+            if (replHistory.length > 0 && replHistoryIndex < replHistory.length - 1) {
+                replHistoryIndex++;
+                replInput.value = replHistory[replHistoryIndex];
+            } else if (replHistoryIndex >= replHistory.length - 1) {
+                replHistoryIndex = replHistory.length;
+                replInput.value = '';
+            }
+            e.preventDefault();
         }
     });
 

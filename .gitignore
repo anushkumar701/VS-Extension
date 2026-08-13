@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Production build / VSIX output
+*.vsix
+.vscode-test/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs & temp files
+*.log
+npm-debug.log*

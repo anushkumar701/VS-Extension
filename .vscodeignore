@@ -1,12 +1,13 @@
-# Exclude these from the packaged extension:
-node_modules
-.vscode-test
-src
-test-project
+# Exclude non-production files from the packaged .vsix extension:
+.vscode/**
+.vscode-test/**
+node_modules/**
+src/**
+test-files/**
+TECHNICAL_DOCUMENTATION.md
 *.vsix
-esbuild.js
-tsconfig.json
 .eslintrc.json
 .gitignore
+tsconfig.json
 **/*.map
-# NOTE: out/ must NOT be excluded — it contains the compiled extension bundles
+out/test/**

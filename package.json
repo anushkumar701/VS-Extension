@@ -1,49 +1,73 @@
 {
-	"name": "cobee-playground",
+	"name": "js-live-preview",
+	"displayName": "JS Live Preview",
+	"description": "Instant side-by-side HTML & CSS Live Preview with interactive JavaScript execution and DevTools console right inside VS Code.",
+	"version": "0.1.0",
+	"publisher": "Midnight-Compiler",
 	"license": "MIT",
-	"displayName": "Cobee Playground",
-	"description": "Preview + console panel for your JavaScript and HTML files. Press Run to see live output.",
-	"version": "1.0.5",
 	"icon": "media/logo.png",
-	"publisher": "WikanAdnyana",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/wikanadnyana/cobee-support.git"
+		"url": "https://github.com/anushkumar701/VS-Extension.git"
 	},
+	"bugs": {
+		"url": "https://github.com/anushkumar701/VS-Extension/issues"
+	},
+	"homepage": "https://github.com/anushkumar701/VS-Extension#readme",
 	"engines": {
 		"vscode": "^1.60.0"
 	},
 	"categories": [
+		"Visualization",
 		"Education",
 		"Other"
 	],
 	"keywords": [
-		"javascript",
-		"playground",
-		"preview",
-		"console",
 		"html",
-		"live"
+		"css",
+		"javascript",
+		"js",
+		"live preview",
+		"html preview",
+		"css preview",
+		"javascript console",
+		"js console",
+		"live reload",
+		"web development",
+		"frontend",
+		"devtools",
+		"webview"
 	],
 	"activationEvents": [],
 	"main": "./out/extension.js",
 	"contributes": {
 		"commands": [
 			{
-				"command": "cobeePlayground.run",
-				"title": "Cobee Playground: Run",
-				"shortTitle": "Run in Playground",
+				"command": "jsLivePreview.run",
+				"title": "Live Preview: Open",
+				"shortTitle": "Open Live Preview",
 				"icon": "$(play)"
 			},
 			{
-				"command": "cobeePlayground.clear",
-				"title": "Cobee Playground: Clear Console",
+				"command": "jsLivePreview.openExternal",
+				"title": "Live Preview: Open in External Browser",
+				"icon": "$(browser)"
+			},
+			{
+				"command": "jsLivePreview.clear",
+				"title": "Live Preview: Clear Console",
 				"icon": "$(clear-all)"
 			}
 		],
 		"keybindings": [
 			{
-				"command": "cobeePlayground.run",
+				"command": "jsLivePreview.run",
+				"key": "ctrl+shift+z",
+				"mac": "cmd+shift+z",
+				"when": "editorTextFocus"
+			},
+			{
+				"command": "jsLivePreview.run",
 				"key": "ctrl+shift+j",
 				"mac": "cmd+shift+j",
 				"when": "editorTextFocus"
@@ -52,17 +76,31 @@
 		"menus": {
 			"editor/title": [
 				{
-					"command": "cobeePlayground.run",
-					"when": "resourceLangId == javascript || resourceLangId == html || resourceLangId == typescript",
+					"command": "jsLivePreview.run",
+					"when": "resourceLangId == javascript || resourceLangId == html || resourceLangId == typescript || resourceLangId == css",
 					"group": "navigation@1"
 				}
 			]
+		},
+		"configuration": {
+			"title": "JS Live Preview",
+			"properties": {
+				"jsLivePreview.openLocation": {
+					"type": "string",
+					"enum": [
+						"sideBySide",
+						"externalBrowser"
+					],
+					"default": "sideBySide",
+					"description": "Choose whether Live Preview opens as a split-screen panel inside VS Code or as a separate external browser window."
+				}
+			}
 		}
 	},
 	"scripts": {
 		"compile": "tsc -p ./",
 		"watch": "tsc -watch -p ./",
-		"vscode:prepublish": "npm run compile",
+		"vscode:prepublish": "echo 'Prepublish complete'",
 		"test": "npm run compile && node ./out/test/runTest.js"
 	},
 	"devDependencies": {
@@ -74,10 +112,5 @@
 		"glob": "^13.0.6",
 		"mocha": "^11.7.5",
 		"typescript": "^5.3.0"
-	},
-	"__metadata": {
-		"installedTimestamp": 1785222537341,
-		"targetPlatform": "undefined",
-		"size": 186539
 	}
 }
