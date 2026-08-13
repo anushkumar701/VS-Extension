@@ -1,0 +1,12 @@
+# Exclude these from the packaged extension:
+node_modules
+.vscode-test
+src
+test-project
+*.vsix
+esbuild.js
+tsconfig.json
+.eslintrc.json
+.gitignore
+**/*.map
+# NOTE: out/ must NOT be excluded — it contains the compiled extension bundles

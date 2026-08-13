@@ -1,0 +1,804 @@
+/* ===================================================================
+   JS Playground — Preview + Console panel (no editor)
+   Uses VS Code theme variables with dark fallbacks
+   =================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --pg-bg: var(--vscode-editor-background, #0f1117);
+  --pg-panel: var(--vscode-sideBar-background, #161b22);
+  --pg-border: var(--vscode-panel-border, #21262d);
+  --pg-text: var(--vscode-editor-foreground, #e6edf3);
+  --pg-muted: var(--vscode-descriptionForeground, #8b949e);
+  --pg-accent: var(--vscode-textLink-foreground, #58a6ff);
+  --pg-green: var(--vscode-terminal-ansiGreen, #3fb950);
+  --pg-red: var(--vscode-terminal-ansiRed, #f85149);
+  --pg-yellow: var(--vscode-terminal-ansiYellow, #d29922);
+  --pg-font: var(--vscode-editor-font-family, 'JetBrains Mono', 'Fira Code', 'Consolas', monospace);
+  --pg-fsize: var(--vscode-editor-font-size, 12px);
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font-size: var(--pg-fsize);
+}
+
+/* ─── Status bar ─── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--pg-panel);
+  border-bottom: 1px solid var(--pg-border);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background .3s;
+}
+
+.status-dot.idle {
+  background: var(--pg-muted);
+}
+
+.status-dot.running {
+  background: var(--pg-yellow);
+  animation: pulse .7s infinite alternate;
+}
+
+.status-dot.done {
+  background: var(--pg-green);
+}
+
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: .4;
+  }
+}
+
+.status-file {
+  flex: 1;
+  color: var(--pg-muted);
+  font-family: var(--pg-font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ─── Main layout (vertical: preview on top, console below) ─── */
+.main {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 28px);
+  overflow: hidden;
+}
+
+/* ─── Section headers ─── */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  background: var(--pg-panel);
+  border-bottom: 1px solid var(--pg-border);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pg-muted);
+  text-transform: uppercase;
+  letter-spacing: .9px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.header-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.preview-dot {
+  background: var(--pg-green);
+}
+
+.console-dot {
+  background: var(--pg-accent);
+}
+
+.header-label {
+  flex: 1;
+}
+
+.preview-hint {
+  font-size: 10px;
+  color: var(--pg-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: .7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* ─── Preview section ─── */
+.preview-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 80px;
+  overflow: hidden;
+}
+
+.preview-wrap {
+  flex: 1;
+  position: relative;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #ffffff;
+}
+
+.empty-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f8f9fa;
+  color: #adb5bd;
+}
+
+.empty-icon {
+  font-size: 36px;
+  opacity: .3;
+  line-height: 1;
+}
+
+.empty-text {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.7;
+  color: #868e96;
+}
+
+.empty-text strong {
+  color: #495057;
+}
+
+/* ─── Resize handle (vertical) ─── */
+.resize-handle-v {
+  height: 4px;
+  cursor: row-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background .15s;
+  position: relative;
+  z-index: 10;
+}
+
+.resize-handle-v:hover,
+.resize-handle-v.dragging {
+  background: var(--pg-accent);
+}
+
+/* ─── Console section ─── */
+.console-section {
+  display: flex;
+  flex-direction: column;
+  height: 35%;
+  min-height: 0;
+  border-top: 1px solid var(--pg-border);
+  transition: height 0.2s ease;
+}
+
+.console-section.collapsed {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: none !important;
+}
+
+.console-section.collapsed .console-log {
+  display: none;
+}
+
+.console-section.collapsed .console-toggle {
+  transform: rotate(-90deg);
+}
+
+.console-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  background: var(--pg-panel);
+  border-bottom: 1px solid var(--pg-border);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pg-muted);
+  text-transform: uppercase;
+  letter-spacing: .9px;
+  user-select: none;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.console-header:hover {
+  background: var(--vscode-list-hoverBackground, #1c2128);
+}
+
+.console-toggle {
+  font-size: 9px;
+  transition: transform 0.2s ease;
+  display: inline-block;
+  line-height: 1;
+}
+
+.badge {
+  background: var(--pg-accent);
+  color: #0d1117;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 15px;
+  display: none;
+}
+
+.badge.visible {
+  display: inline-block;
+}
+
+.count-pill {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.count-pill.visible {
+  display: inline-flex;
+}
+
+.error-count {
+  background: rgba(248, 81, 73, .18);
+  color: var(--pg-red);
+}
+
+.warn-count {
+  background: rgba(210, 153, 34, .18);
+  color: var(--pg-yellow);
+}
+
+/* ─── Icon buttons ─── */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--pg-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  transition: color .15s, background .15s;
+}
+
+.icon-btn:hover {
+  color: var(--pg-text);
+  background: rgba(255, 255, 255, .07);
+}
+
+.icon-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.clear-btn {
+  margin-left: auto;
+}
+
+/* ─── Console log ─── */
+.console-log {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--pg-bg);
+  padding: 2px 0;
+  min-height: 0;
+  font-family: var(--pg-font);
+}
+
+.log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 12px;
+  font-size: 12px;
+  line-height: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, .03);
+}
+
+.log-entry:hover {
+  background: rgba(255, 255, 255, .025);
+}
+
+.log-entry.level-error {
+  background: rgba(248, 81, 73, .07);
+  border-left: 2px solid var(--pg-red);
+}
+
+.log-entry.level-warn {
+  background: rgba(210, 153, 34, .07);
+  border-left: 2px solid var(--pg-yellow);
+}
+
+.log-time {
+  color: var(--pg-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+  padding-top: 2px;
+  min-width: 76px;
+  opacity: .65;
+}
+
+.log-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 18px;
+  font-style: normal;
+}
+
+.icon-log {
+  color: var(--pg-accent);
+}
+
+.icon-warn {
+  color: var(--pg-yellow);
+}
+
+.icon-error {
+  color: var(--pg-red);
+}
+
+.icon-info {
+  color: var(--pg-green);
+}
+
+.log-msg {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--pg-text);
+}
+
+.level-error .log-msg {
+  color: var(--pg-red);
+}
+
+.level-warn .log-msg {
+  color: var(--pg-yellow);
+}
+
+.translate-btn {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 12px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  opacity: 0.8;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.translate-btn:hover {
+  opacity: 1;
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.translate-btn.active {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ffffff);
+}
+
+.translate-btn.active:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+/* ─── Error message HTML formatting ─── */
+.log-icon-img {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  object-fit: contain;
+}
+
+.level-error .log-msg strong {
+  color: var(--pg-red);
+  font-weight: 700;
+}
+
+.level-error .log-msg ul {
+  list-style: none;
+  margin: 4px 0 4px 0;
+  padding: 0;
+}
+
+.level-error .log-msg li {
+  position: relative;
+  padding-left: 14px;
+  line-height: 1.6;
+  font-size: 11px;
+  color: var(--pg-text);
+}
+
+.level-error .log-msg li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: var(--pg-yellow);
+  font-weight: 700;
+}
+
+.level-error .log-msg code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--pg-font);
+  font-size: 11px;
+  color: var(--pg-accent);
+}
+
+.level-error .log-msg small {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--pg-muted);
+  opacity: 0.7;
+  word-break: break-all;
+}
+
+.error-line {
+  display: inline-block;
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--pg-red);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ─── Console empty state ─── */
+.console-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--pg-muted);
+  font-size: 11px;
+  font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  opacity: .65;
+  text-align: center;
+  padding: 16px;
+}
+
+/* ─── Scrollbars ─── */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pg-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pg-muted);
+}
+
+/* ─── Custom Modal Dialogs (Overlay) ─── */
+.__pg-ov {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+}
+
+.__pg-dl {
+  background: #1e1e1e;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 300px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.__pg-dt {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.__pg-dm {
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.__pg-di {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #0d1117;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  outline: none;
+  margin-bottom: 14px;
+}
+
+.__pg-di:focus {
+  border-color: #58a6ff;
+}
+
+.__pg-db {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.__pg-b {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.__pg-bp {
+  background: #238636;
+  color: #fff;
+}
+
+.__pg-bp:hover {
+  background: #2ea043;
+}
+
+.__pg-bc {
+  background: #21262d;
+  color: #c9d1d9;
+}
+
+
+.__pg-bc:hover {
+  background: #30363d;
+}
+
+/* ─── Feature 1: Console Filter Tabs ─── */
+.console-filters {
+  display: flex;
+  gap: 2px;
+  padding: 4px 10px;
+  background: var(--pg-panel);
+  border-bottom: 1px solid var(--pg-border);
+  flex-shrink: 0;
+}
+
+.filter-btn {
+  background: transparent;
+  border: none;
+  color: var(--pg-muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  padding: 2px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.filter-btn:hover {
+  color: var(--pg-text);
+  background: rgba(255,255,255,.06);
+}
+
+.filter-btn.active {
+  background: rgba(88,166,255,.15);
+  color: var(--pg-accent);
+}
+
+/* ─── Feature 5: Responsive Preview Toggles ─── */
+.resp-toolbar {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.resp-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  opacity: .45;
+  transition: opacity .15s, background .15s;
+  line-height: 1;
+}
+
+.resp-btn:hover {
+  opacity: .85;
+  background: rgba(255,255,255,.08);
+}
+
+.resp-btn.active {
+  opacity: 1;
+  background: rgba(88,166,255,.15);
+}
+
+/* Center iframe when responsive mode is active */
+.preview-wrap.resp-mode {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-x: auto;
+  background: #2a2d35;
+}
+
+.preview-wrap.resp-mode .preview-frame {
+  height: 100%;
+  flex-shrink: 0;
+  transition: width .25s ease;
+}
+
+/* ─── Feature 10: Clickable Error Line badge ─── */
+.error-line {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.error-line:hover {
+  background: rgba(248, 81, 73, 0.3);
+}
+
+/* ─── Feature 11: REPL Console Input ─── */
+.console-repl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--pg-panel);
+  border-top: 1px solid var(--pg-border);
+  flex-shrink: 0;
+}
+
+.repl-prompt {
+  color: var(--pg-accent);
+  font-family: var(--pg-font);
+  font-size: 14px;
+  flex-shrink: 0;
+  line-height: 1;
+  opacity: .8;
+  user-select: none;
+}
+
+.repl-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--pg-text);
+  font-family: var(--pg-font);
+  font-size: 12px;
+  caret-color: var(--pg-accent);
+}
+
+.repl-input::placeholder {
+  color: var(--pg-muted);
+  opacity: .5;
+}
+
+.repl-run-btn {
+  background: transparent;
+  border: none;
+  color: var(--pg-accent);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: .65;
+  transition: opacity .15s, background .15s;
+  flex-shrink: 0;
+}
+
+.repl-run-btn:hover {
+  opacity: 1;
+  background: rgba(88,166,255,.12);
+}
+
+/* REPL echo line (> code typed) */
+.log-entry.level-log .log-msg[style*="›"],
+.log-entry .log-msg:first-line {
+  /* handled via text prefix, no special style needed */
+}
+
+/* collapsed console hides filters and repl too */
+.console-section.collapsed .console-filters,
+.console-section.collapsed .console-repl {
+  display: none;
+}
