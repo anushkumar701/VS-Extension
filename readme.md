@@ -74,4 +74,4 @@ And you can click the **ID** button to read it in Indonesian.
 
 ## License
 
-[MIT](https://github.com/wikanadnyana/cobee-support/blob/HEAD/LICENSE) © Wikan Adnyana
+[MIT
