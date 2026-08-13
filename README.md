@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/anushkumar701/VS-Extension/blob/main/LICENSE.txt"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/VS%20Code-v1.60.0%2B-007ACC.svg" alt="VS Code Version">
-  <img src="https://img.shields.io/badge/Version-0.1.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.0.2-brightgreen.svg" alt="Version">
 </p>
 
 ---

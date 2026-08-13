@@ -2,7 +2,15 @@
 
 All notable changes to **JS Live Preview** will be documented in this file.
 
-## [0.1.0] - 2026-08-13
+## [1.0.2] - 2026-08-13
+
+### Added
+- 🌐 **External Browser Mode & Hot Reloading**: Standalone browser window support with Server-Sent Events (SSE) live reload.
+- 🖥️ **Browser Console Synchronization**: Native DevTools `F12` console logging mirrored alongside VS Code console.
+- ⌨️ **REPL Command History**: Up/Down Arrow key navigation in the console evaluator.
+- 🛡️ **Path Resolution & Security**: Safe resolution for nested asset relative paths.
+
+## [1.0.0] - 2026-08-13
 
 ### Added
 - ⚡ **Side-by-Side Live Preview**: Instant HTML, CSS, and JS preview inside VS Code.

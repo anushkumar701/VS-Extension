@@ -2,7 +2,7 @@
 	"name": "js-live-preview",
 	"displayName": "JS Live Preview",
 	"description": "Instant side-by-side HTML & CSS Live Preview with interactive JavaScript execution and DevTools console right inside VS Code.",
-	"version": "0.1.0",
+	"version": "1.0.2",
 	"publisher": "Midnight-Compiler",
 	"license": "MIT",
 	"icon": "media/logo.png",
